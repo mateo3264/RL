@@ -51,3 +51,4 @@ class NN:
         activation[activation>0.5] = 1
         activation[activation<=0.5] = 0
         return activation
+print('Mateo duro del ...')
