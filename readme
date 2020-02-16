@@ -1,1 +1,2 @@
-hola
+El archivo q_learning_discounted_reward_effect.py es un experimento tratando de prolongar el efecto del reward más allá en el pasado que el
+estado inmediatamente anterior.
