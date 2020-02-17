@@ -1,7 +1,8 @@
+#dyna agent with backward search control heuristic
 import numpy as np
 from time import sleep
 import matplotlib.pyplot as plt
-
+import random
 rows = 16
 cols = 19
 start = (2,0)
@@ -37,17 +38,20 @@ class Environment:
         return self.state
 
     def give_reward(self):
-        return 1 if self.state==self.goal else -0.01
+        return 100 if self.state==self.goal else -0.01
 
     def reset(self):
         self.state = self.start
 
 
-class QAgent:
-    def __init__(self,env,learning_rate,gamma):
+class Dyna2Agent:
+    def __init__(self,env,learning_rate,gamma,planning_steps):
         self.lr = learning_rate
         self.gamma = gamma
         self.Q = {}
+        self.M = {}
+        self.planning_steps = planning_steps
+        self.episode = []
         self.env = env
         self.agent_state = self.env.state
         self.accumulated_reward = 0
@@ -72,10 +76,23 @@ class QAgent:
             return np.random.choice(BEHAVIORS)
         else:
             return behavior
+    def planning(self):
+        if len(self.episode)<=self.planning_steps:
+            for (sim_s,sim_a) in reversed(self.episode):
+                #control search
+                sim_next_state,sim_reward = self.M[sim_s][sim_a]
+                sim_nextBehavior,sim_nextQValue = self.get_best_action(sim_next_state)
+
+                target = sim_reward + self.gamma*sim_nextQValue - self.Q[sim_s][sim_a]
+                self.Q[sim_s][sim_a] += self.lr*target
     def learn(self,s,b,eps):
+        self.episode.append((s,b))
         nextState = self.env.next_state(b)
         self.agent_state = nextState
         reward = self.env.give_reward()
+        if s not in self.M:
+            self.M[s] = {}
+        self.M[s][b] = (nextState,reward)
         self.accumulated_reward += reward
         if self.env.state != self.env.goal:
             nextBehavior,nextQValue = self.get_best_action(nextState)
@@ -83,9 +100,11 @@ class QAgent:
             self.Q[s][b] = self.Q[s][b] + self.lr*(reward +self.gamma*nextQValue - self.Q[s][b])
         else:
             self.Q[s][b] = self.Q[s][b] + self.lr*(reward - self.Q[s][b])
+        self.planning()
 
     def reset(self):
         self.accumulated_reward = 0
+        self.episode = []
 
         #if s == self.env.goal:
             #print('s',s,'goal!!!!')
@@ -96,9 +115,9 @@ class QAgent:
 
 
 env = Environment()
-a = QAgent(env,1,0.9)
+a = Dyna2Agent(env,1,0.9,5)
 
-num_episodes = 10
+num_episodes = 100
 eps = 0.5
 t = 1
 episodes = []
