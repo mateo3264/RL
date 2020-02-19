@@ -1,5 +1,5 @@
 import numpy as np
-from time import sleep
+from time import sleep,time
 import matplotlib.pyplot as plt
 
 rows = 16
@@ -43,7 +43,7 @@ class Environment:
         self.state = self.start
 
 
-class QAgent:
+class ExpectedSARSAAgent:
     def __init__(self,env,learning_rate,gamma):
         self.lr = learning_rate
         self.gamma = gamma
@@ -56,9 +56,9 @@ class QAgent:
                 self.Q[(r,c)] = {}
                 for b in BEHAVIORS:
                     self.Q[(r,c)][b] = 0
-    def __str__(self):
-        return 'Q-Learning Agent'
 
+    def __str__(self):
+        return 'SARSA Agent'
     def get_best_action(self,s):
         best_behavior = None
         best_value = float('-inf')
@@ -67,6 +67,7 @@ class QAgent:
                 best_value = self.Q[s][b]
                 best_behavior = b
         return best_behavior,best_value
+
     def explore(self,behavior,eps=0.5):
         p = np.random.random()
         if p<eps:
@@ -81,7 +82,8 @@ class QAgent:
         if self.env.state != self.env.goal:
             nextBehavior,nextQValue = self.get_best_action(nextState)
             nextBehavior = self.explore(nextBehavior,eps)
-            self.Q[s][b] = self.Q[s][b] + self.lr*(reward +self.gamma*nextQValue - self.Q[s][b])
+            #nextQValue = self.expectation_next_value(nextState,nextBehavior,eps)
+            self.Q[s][b] = self.Q[s][b] + self.lr*(reward +self.gamma*self.Q[nextState][nextBehavior] - self.Q[s][b])
         else:
             self.Q[s][b] = self.Q[s][b] + self.lr*(reward - self.Q[s][b])
 
@@ -99,7 +101,8 @@ class QAgent:
 env = Environment()
 learning_rate = 1
 gamma = 0.9
-a = QAgent(env,learning_rate,gamma)
+a = ExpectedSARSAAgent(env,learning_rate,gamma)
+ti = time()
 print(a)
 num_episodes = 1000
 eps = 0.5
@@ -131,6 +134,7 @@ for it in range(num_episodes):
             print(episodes[-1])
         except:
             pass
+print('tiempo empleado:',time()-ti)
 plt.plot([x for x in range(num_episodes)],episodes)
 plt.title(str(a)+' : '+'Longitud episodios')
 plt.show()

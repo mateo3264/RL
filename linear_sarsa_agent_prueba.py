@@ -3,15 +3,14 @@ import numpy as np
 from time import sleep,time
 import matplotlib.pyplot as plt
 import random
-rows = 16
-cols = 19
-start = (5,0)
-goal = (0,18)
-blocks = [(1,1),(2,1),(3,1),(4,1),(5,1)]#,(0,17),(1,17),(2,17),(3,17),(4,17),(5,17),(9,17),(10,17),(11,17),(12,17)]
-doors = [(0,1)]#,(5,7),(6,7),(7,7),(8,7)]
+rows = 6
+cols = 9
+start = (2,0)
+goal = (0,8)
+blocks = [(1,1),(2,1),(3,1),(4,1),(5,1),(0,7),(1,7),(2,7),(3,7),(4,7)]#,(5,7),(9,7),(10,7),(11,7),(12,7)]
+
 BEHAVIORS = ('U','D','L','R')
 
-#np.random.seed(1)
 
 class Environment:
     def __init__(self):
@@ -41,13 +40,6 @@ class Environment:
                 #self.unblocked_move = 1
         return self.state
 
-    def give_reward2(self):
-        if self.state==self.goal:
-            return 100
-        elif self.state in doors:
-            return 10
-        else:
-            return -1
     def give_reward(self):
         return 1 if self.state==self.goal else -0.01
     def is_move_unblocked(self,state,behavior):
@@ -67,29 +59,8 @@ class Environment:
                 #self.state = (r,c)
                 return  1
             else:
-                return  0
-        return 0
-    def euclidean_distance_to_door(self,state,behavior):
-        next_doors = [door for door in doors if door[1]>state[1]]
-        nds = []
-        min_dis = float('inf')
-        min_dis_x = min_dis_y = 0
-        for d in next_doors:
-            delta_x = state[1]-d[1]
-            delta_y = state[0]-d[0]
-            #ed = np.sqrt((delta_x**2)+(delta_y**2))
-            if delta_x<min_dis:
-                min_dis = delta_x
-                min_dis_x,min_dis_y = delta_x,delta_y
-#        try:
-#            ed = min(nds)
-#        except:
-#            ed = 1
-#        if ed==0:
-#            ed = 1
-#        den = np.sqrt((rows-1)**2+(cols-1)**2)
-        #print('x',min_dis_x,'y',min_dis_y)
-        return min_dis_x,min_dis_y
+                return  -1
+        return -1
 
     def reset(self):
         self.state = self.start
@@ -113,24 +84,20 @@ class LinearAgent:
         self.env = env
         self.gamma = gamma
         self.lr = learning_rate
-        self.weights = np.random.randn(45)/np.sqrt(45)
+        self.weights = np.random.randn(37)/np.sqrt(37)
         self.accumulated_reward = 0
     def __str__(self):
         return 'Linear SARSA Agent'
 
     def sa2x(self,s,a):
-        dist_x,dist_y = self.env.euclidean_distance_to_door(s,a)
         return np.array([
           s[0] - (rows-1)//2              if a == 'U' else 0,
           s[1] - (cols-1)//2            if a == 'U' else 0,
           (s[0]*s[1] - ((rows-1)*(cols-1))//2)/((rows-1)*(cols-1))//2     if a == 'U' else 0,
           (s[0]*s[0] - ((rows-1)*(rows-1))//2)/((rows-1)*(rows-1))//2     if a == 'U' else 0,
           (s[1]*s[1] - ((cols-1)*(cols-1))//2)/((cols-1)*(cols-1))//2     if a == 'U' else 0,
-          abs(self.env.state[0]-self.env.goal[0])/(rows-1) if a == 'U' else 0,
-          abs(self.env.state[1]-self.env.goal[1])/(cols-1) if a == 'U' else 0,
-#          self.env.euclidean_distance_to_door(s,a) if a == 'U' else 0,
-          dist_x if a == 'U' else 0,
-          dist_y if a == 'U' else 0,
+          abs(1/(self.env.state[0]-self.env.goal[0]))/(rows-1) if a == 'U' else 0,
+          abs(1/(self.env.state[1]-self.env.goal[1]))/(cols-1) if a == 'U' else 0,
           self.env.is_move_unblocked(s,a) if a == 'U' else 0,
           1                     if a == 'U' else 0,
           s[0] - (rows-1)//2              if a == 'D' else 0,
@@ -138,11 +105,8 @@ class LinearAgent:
           (s[0]*s[1] - ((rows-1)*(cols-1))//2)/((rows-1)*(cols-1))//2     if a == 'D' else 0,
           (s[0]*s[0] - ((rows-1)*(rows-1))//2)/((rows-1)*(rows-1))//2     if a == 'D' else 0,
           (s[1]*s[1] - ((cols-1)*(cols-1))//2)/((cols-1)*(cols-1))//2     if a == 'D' else 0,
-          abs(self.env.state[0]-self.env.goal[0])/(rows-1) if a == 'D' else 0,
-#          self.env.euclidean_distance_to_door(s,a) if a == 'D' else 0,
-          abs(self.env.state[1]-self.env.goal[1])/(cols-1) if a == 'D' else 0,
-          dist_x if a == 'D' else 0,
-          dist_y if a == 'D' else 0,
+          abs(1/(self.env.state[0]-self.env.goal[0]))/(rows-1) if a == 'D' else 0,
+          abs(1/(self.env.state[1]-self.env.goal[1]))/(cols-1) if a == 'D' else 0,
           self.env.is_move_unblocked(s,a) if a == 'D' else 0,
           1                     if a == 'D' else 0,
           s[0] - (rows-1)//2              if a == 'L' else 0,
@@ -150,11 +114,8 @@ class LinearAgent:
           (s[0]*s[1] - ((rows-1)*(cols-1))//2)/((rows-1)*(cols-1))//2     if a == 'L' else 0,
           (s[0]*s[0] - ((rows-1)*(rows-1))//2)/((rows-1)*(rows-1))//2     if a == 'L' else 0,
           (s[1]*s[1] - ((cols-1)*(cols-1))//2)/((cols-1)*(cols-1))//2     if a == 'L' else 0,
-          abs(self.env.state[0]-self.env.goal[0])/(rows-1) if a == 'L' else 0,
-          abs(self.env.state[1]-self.env.goal[1])/(cols-1) if a == 'L' else 0,
-#          self.env.euclidean_distance_to_door(s,a) if a == 'L' else 0,
-          dist_x if a == 'L' else 0,
-          dist_y if a == 'L' else 0,
+          abs(1/(self.env.state[0]-self.env.goal[0]))/(rows-1) if a == 'L' else 0,
+          abs(1/(self.env.state[1]-self.env.goal[1]))/(cols-1) if a == 'L' else 0,
           self.env.is_move_unblocked(s,a) if a == 'L' else 0,
           1                     if a == 'L' else 0,
 
@@ -163,11 +124,8 @@ class LinearAgent:
           (s[0]*s[1] - ((rows-1)*(cols-1))//2)/((rows-1)*(cols-1))//2     if a == 'R' else 0,
           (s[0]*s[0] - ((rows-1)*(rows-1))//2)/((rows-1)*(rows-1))//2     if a == 'R' else 0,
           (s[1]*s[1] - ((cols-1)*(cols-1))//2)/((cols-1)*(cols-1))//2     if a == 'R' else 0,
-          abs(self.env.state[0]-self.env.goal[0])/(rows-1) if a == 'R' else 0,
-          abs(self.env.state[1]-self.env.goal[1])/(cols-1) if a == 'R' else 0,
-#          self.env.euclidean_distance_to_door(s,a) if a == 'R' else 0,
-          dist_x if a == 'R' else 0,
-          dist_y if a == 'R' else 0,
+          abs(1/(self.env.state[0]-self.env.goal[0]))/(rows-1) if a == 'R' else 0,
+          abs(1/(self.env.state[0]-self.env.goal[0]))/(cols-1) if a == 'R' else 0,
           self.env.is_move_unblocked(s,a) if a == 'R' else 0,
           1                     if a == 'R' else 0,
           1
@@ -218,18 +176,15 @@ class LinearAgent:
         self.accumulated_reward = 0
 
 env = Environment()
-lr = 0.1
-gamma = .999
+lr = 0.01
+gamma = 0.9
 a = LinearAgent(env,gamma,lr)
 
 num_episodes = 10000
-eps = 0.5
+eps = 0.3
 t = 1
-t2 = 1
 episodes = []
 accumulated_rewards = []
-descripcion = input('Description: ')
-print(descripcion)
 print('Agent:',a)
 print('rows',rows)
 print('# of obstacles',len(blocks))
@@ -239,9 +194,6 @@ print('gamma',gamma)
 print('eps',eps)
 ti = time()
 print('tiempo inicial',ti)
-promedio = 0
-promedios = [promedio]
-promedio100 = []
 for it in range(num_episodes):
     s = env.start
     env.reset()
@@ -258,30 +210,16 @@ for it in range(num_episodes):
         #print('s',s)
         episode.append(s)
 
-    #print('e',it,len(episode))
-    promedio100.append(len(episode))
+    print('e',it,len(episode))
     episodes.append(len(episode))
-    promedio += (1/len(promedio100))*(len(episode)-promedio)
-    promedios.append(promedio)
-    promedio100.append(promedio)
     accumulated_rewards.append(a.accumulated_reward)
-    if it%100 == 0 and it !=0:
-        t2 +=.01
-
-
-        a.lr =lr/t2
     if it%100 == 0 and it != 0:
-
         t +=.1
-        print(20*'*')
-        print('it',it)
-        print('mean',promedio)
-        #print('length of episode',len(episode))
+        print('length of episode',len(episode))
         print('accumulated reward',a.accumulated_reward)
         print('eps',eps/t)
-        promedio100 = [len(episode)]
-        promedio = 0
 
+        a.lr =lr/t
         #sleep(1)
         try:
             print(episodes[-1])
@@ -293,7 +231,4 @@ plt.title('longitud de episodios')
 plt.show()
 plt.plot([x for x in range(num_episodes)],accumulated_rewards)
 plt.title('refuerzo acumulado')
-plt.show()
-plt.plot([x for x in range(len(promedios))],promedios)
-plt.title('promedio episodios')
 plt.show()

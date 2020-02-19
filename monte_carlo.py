@@ -70,7 +70,8 @@ class MCAgent:
                 for b in BEHAVIORS:
                     self.Q[(r,c)][b] = 0#1:avg G,number
                     #self.returns[(r,c)][b] =
-
+    def __str__(self):
+        return 'Monte Carlo Agent'
     def get_best_action(self,s):
         best_behavior = None
         best_value = float('-inf')
@@ -120,10 +121,11 @@ class MCAgent:
 
 
 env = Environment()
-lr = 0.001 
-a = MCAgent(env,lr,0.9)
+lr = 0.01
+gamma = 0.9
+a = MCAgent(env,lr,gamma)
 print('lr:',lr)
-num_episodes = 5000
+num_episodes = 1000
 eps = 0.2
 t = 1
 episodes = []
@@ -222,10 +224,10 @@ for it in range(num_episodes):
         except:
             pass
 plt.plot([x for x in range(num_episodes)],episodes)
-plt.title('longitud de episodios')
+plt.title(str(a)+' : '+'longitud de episodios')
 plt.show()
 plt.plot([x for x in range(num_episodes)],accumulated_rewards)
-plt.title('refuerzo acumulado')
+plt.title(str(a)+' : '+'refuerzo acumulado')
 plt.show()
 print('fin')
 test(env,a)
