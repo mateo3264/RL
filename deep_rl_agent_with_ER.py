@@ -93,6 +93,8 @@ class Environment:
 
         else:
             return -0.01
+
+
     def reset_goal(self):
         min_y = np.random.uniform(0,Y_REGION-self.behavior_step)
         max_y = min_y + 1
@@ -125,12 +127,13 @@ class Agent:
         self.theta = [ws.copy() for ws in self.weights]
         self.tao = 0.01
         self.experiences = []
-        self.max_num_experiences = 1000
-
-        self.mini_batch_size = 32
+        self.max_num_experiences = 10000
+        self.update_target_network_steps = 10
+        self.number_steps_for_theta_update = 0
+        self.mini_batch_size = 64
 
     def __str__(self):
-        return 'Shallow NN Agent with ER'
+        return 'Deep NN Agent with ER'
 
     def s2x(self,s):
         y_normalization_term = Y_REGION//2
@@ -178,6 +181,8 @@ class Agent:
             ])
         x = x.reshape(x.shape[0],m)
         return x
+
+
     def target_forward(self,s):
         a = self.s2x(s)
         for l in range(self.num_layers-1):
@@ -214,6 +219,8 @@ class Agent:
                 a = ReLU(z)
             activations.append(a)
         return a,activations,zs
+
+
     def get_td_error(self,s):
         behavior,value = self.best_behavior_and_value(s)
         behavior = self.expVSexp(behavior)
@@ -291,6 +298,7 @@ class Agent:
 
         non_terminal_target_ms = r_ms[0] + self.gamma*next_q_ms - q_ms
         terminal_target_ms = r_ms
+        #print('r_ms',r_ms)
 
 #        try:
         respective_targets = [terminal_target_ms[0,i] if done_ms[0,i] else non_terminal_target_ms[0,i] for i in range(len(done_ms[0]))]
@@ -301,7 +309,9 @@ class Agent:
         cols = [x for x in range(len(mini_batch))]
 
         target_ms[b_ms[0].astype('int'),np.array(cols)] = respective_targets
+        #print('target_ms,q_ms',target_ms,q_ms)
         delta_ms = target_ms - q_ms
+
         return delta_ms
 
 
@@ -312,6 +322,7 @@ class Agent:
         else:
             k = self.mini_batch_size
         mini_batch = random.sample(self.experiences,k)
+        #print(mini_batch)
         s_ms,b_ms,next_s_ms,r_ms,done_ms = self.unpack_experiences(mini_batch)
         x_ms = self.s2x(s_ms)
         a_ms = x_ms
@@ -328,7 +339,7 @@ class Agent:
 
 
         delta_ms = self.get_er_td_error(mini_batch)
-        dw = np.dot(delta_ms,activations[-2].T)
+        dw = (1/k)*np.dot(delta_ms,activations[-2].T)
 
         da_ms = np.dot(self.weights[-1].T,delta_ms)
 
@@ -339,7 +350,7 @@ class Agent:
             cached_z_ms = zs[-l]
             delta_ms = da_ms*ReLU_prime(cached_z_ms)
             dw = np.dot(delta_ms,cached_a_ms.T)
-            dw = (1/self.mini_batch_size)*dw
+            dw = (1/k)*dw
             grads.append(dw)
             da_ms = np.dot(self.weights[-l].T,delta_ms)
 
@@ -348,10 +359,13 @@ class Agent:
         tmp_ws = [ws.copy() for ws in self.weights]
         tmp_thetas = [ts.copy() for ts in self.theta]
         #print('BEFORE',type(self.theta))
-
-        self.theta = [self.theta[l] + self.tao*tmp_ws + (1 - self.tao)*tmp_thetas
-                        for l,(tmp_ws,tmp_thetas) in enumerate(zip(tmp_ws,tmp_thetas))
-                        ]
+        self.number_steps_for_theta_update += 1
+#        self.theta = [self.theta[l] + self.tao*tmp_ws + (1 - self.tao)*tmp_thetas
+#                        for l,(tmp_ws,tmp_thetas) in enumerate(zip(tmp_ws,tmp_thetas))
+#                        ]
+        if self.update_target_network_steps % self.number_steps_for_theta_update == 0:
+            self.theta = tmp_ws
+            self.number_steps_for_theta_update = 0
         #print('AFTER',type(self.theta))
     def train_with_experiences(self,grads):
         for l,dw in enumerate(grads):
@@ -386,8 +400,8 @@ class Agent:
         self.env.state = s
         grads,next_s = self.backprop(s)
 
-        for l,grad in enumerate(grads):
-            self.weights[-l-1] += self.lr*grad
+#        for l,grad in enumerate(grads):
+#            self.weights[-l-1] += self.lr*grad
 
         self.experience_replay()
 
@@ -395,15 +409,15 @@ class Agent:
         return next_s
 
 env = Environment(Y_REGION,X_REGION,INITIAL_STATE,GOAL)
-gamma = 0.9
-learning_rate = .0001
-lr_decaying_factor = .9
-eps = .2
-eps_decaying_factor = 0.9
+gamma = 1
+learning_rate = 0.01
+lr_decaying_factor = .8
+eps = 1
+eps_decaying_factor = 0.7
 min_eps = 0.01
 num_inputs = 8
 num_behaviors = 4
-layers = [num_inputs,100,num_behaviors]
+layers = [num_inputs,250,250,num_behaviors]
 agent = Agent(env,gamma,learning_rate,eps,layers)
 
 num_episodes = 10000
@@ -412,12 +426,13 @@ beta  = 0.9
 value = None
 it = 1
 
-def print_hiperparameters(gamma,learning_rate,eps):
+def print_hiperparameters(gamma,learning_rate,eps,layers):
     print('GAMMA:',gamma)
     print('LEARNING RATE',learning_rate)
     print('EPSILON',eps)
     print('AGENT',agent)
-print_hiperparameters(gamma,learning_rate,eps)
+    print('LAYERS',layers)
+print_hiperparameters(gamma,learning_rate,eps,layers)
 
 def exp_mov_avg(beta,it,avg,value):
     m = beta*avg + (1 - beta)*value
@@ -450,5 +465,7 @@ for ep in range(num_episodes):
         if agent.eps>min_eps:
             agent.eps *=eps_decaying_factor
         agent.lr *=lr_decaying_factor
+    if ep%100 == 0:
+        env.reset_goal()
 
     print('GOAL',env.goal_center,episodes[-1])
