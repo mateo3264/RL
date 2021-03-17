@@ -1,0 +1,1281 @@
+
+
+import numpy as np
+import cv2
+from PIL import Image
+#from rl_dyn_plt import DynamicUpdate
+import matplotlib.pyplot as plt
+from time import sleep
+import random
+from collections import deque
+
+
+
+class ShmupEnv:
+    def __init__(self,rows,cols,n_mobs):
+        self.rows = rows
+        self.cols = cols
+        self.n_mobs = n_mobs
+        self.initial_agent_position = [self.rows-1,self.cols//2]
+        self.current_agent_pos = self.initial_agent_position
+
+        self.mob_poss = self.spawn_mobs()
+        self.initial_pos = self.get_state()
+        self.current_state = self.initial_pos
+        self.mob_poss = self.spawn_mobs()
+        
+    def reset(self):
+        self.initial_agent_position = [self.rows-1,self.cols//2]
+        self.current_agent_pos = self.initial_agent_position
+
+        self.mob_poss = self.spawn_mobs()
+        self.initial_pos = self.get_state()
+        self.current_state = self.initial_pos
+
+    def get_state(self):
+        state = []
+        for mob_pos in self.mob_poss:
+            for mob_coor in mob_pos:
+                state.append(mob_coor)
+        for agent_coor in self.current_agent_pos:
+            state.append(agent_coor)
+        return state
+
+            
+    def spawn_mobs(self):
+        mob_poss = []
+        for i in range(self.n_mobs):
+            row = 0
+            col = np.random.randint(self.cols)
+            mob_poss.append([row,col])
+        return mob_poss
+
+    def spawn_one_mob(self,mob_idx):
+        row = 0
+        col = (self.current_agent_pos[1]+ np.random.randint(-2,3))%self.cols#np.random.randint(self.cols)
+        self.mob_poss[mob_idx] = [row,col]
+        
+    def calculate_dist(self):
+        if self.cols/2 - self.current_agent_pos[1] > 0:
+            return np.abs(-1-self.current_agent_pos[1])
+        return np.abs(self.cols-self.current_agent_pos[1])
+    def step(self,action):
+        r,c = self.current_agent_pos
+        if action == 2:
+            r -=1
+        if action == 0:
+            c -=1
+        if action == 3:
+            r +=1
+        if action == 1:
+            c +=1
+        
+
+
+        if r < 0:
+            r = 0
+        elif r > self.rows - 1:
+            r = self.rows - 1
+        elif c < 0:
+            c = 0
+        elif c > self.cols - 1:
+            c = self.cols - 1
+        self.current_agent_pos = (r,c)
+        reward = 1 - (5/self.calculate_dist())
+        #print('reward',reward)
+        done = False
+        
+        for i in range(self.n_mobs):
+            mob_pos = self.mob_poss[i][0]
+            mob_pos += 1
+            if mob_pos > self.rows - 1:
+                self.spawn_one_mob(i)
+            else:
+                self.mob_poss[i][0] +=1
+        self.current_state = self.get_state()
+        for i in range(self.n_mobs):
+
+            if (r,c) == tuple(self.mob_poss[i]):
+                done = True
+                reward = -10
+                return self.current_state,reward,done
+        return self.current_state,reward,done#tuple(mob_coor for mob_coor in mob_pos for mob_pos in self.mob_poss)+(r,c),reward,done
+
+    def render(self):
+        z = np.zeros((self.rows,self.cols,3),dtype=np.int8)
+        #for row in range(self.rows):
+            #for col in range(self.cols):
+        #if [row,col] == self.current_agent_pos:
+        z[self.current_agent_pos] = [255,0,0]
+        near = False
+        ticks = 1
+        for mob_pos in self.mob_poss:
+            z[mob_pos[0],mob_pos[1]] = [0,0,255]
+            if mob_pos[0]>9:
+                near = True
+        if near:
+            ticks = 200
+        img = Image.fromarray(z,'RGB')
+        img = img.resize((250,250),Image.NEAREST)
+        
+        cv2.imshow('',np.array(img))
+        cv2.waitKey(ticks)
+
+    def state_as_pixels(self,state=None):
+            z = np.zeros((self.rows,self.cols),dtype=np.int8)
+        #for row in range(self.rows):
+            #for col in range(self.cols):
+        #if [row,col] == self.current_agent_pos:
+        #if state is None:
+            z[self.current_agent_pos] = 2
+
+            
+            for mob_pos in self.mob_poss:
+                z[mob_pos[0],mob_pos[1]] = -1
+
+        
+            z = z.flatten()
+            return z
+
+    def states_as_pixels(self,states):
+        pass
+        #for s in states:
+         #   dif_frame = 
+
+
+##class GridWorld:
+##    def __init__(self,rows,cols,walls,terminal_states):
+        
+
+          
+class Agent:
+    def __init__(self,alpha,epsilon,gamma,env):
+        self.alpha = alpha
+        self.epsilon = epsilon
+        self.gamma = gamma
+        #self.n_actions = n_actions
+        self.action_space = [0,1]
+        self.env = env
+        self.Qs = np.zeros((env.rows,env.cols,env.rows,env.cols,len(self.action_space)))
+
+    def choose_action(self,state):
+        p = np.random.rand()
+        if p < self.epsilon:
+            return np.random.choice(self.action_space)
+        else:
+            action_idx = np.argmax(self.Qs[state[0],state[1],state[2],state[3]])
+            return self.action_space[action_idx]
+        
+    def learn(self):
+        state = self.env.current_state
+        #print('state',state)
+        action = self.choose_action(state)
+        #print('action',action)
+        next_s,reward,done = self.env.step(action)
+        #print('next_s',next_s)
+        if done:
+            target = reward
+        else:
+            target = reward + self.gamma*np.max(self.Qs[next_s])
+        self.Qs[state[0],state[1],state[2],state[3],action] = self.Qs[state[0],state[1],state[2],state[3],action] + self.alpha*(target - self.Qs[state[0],state[1],state[2],state[3],action]) #state[0],state[1],state[2],state[3],action] =
+        return done
+
+#Number of features hardcoded
+#Number of actions hardcoded
+    
+class FirstLinearAgent:
+    def __init__(self,alpha,epsilon,min_epsilon,decay_epsilon,gamma,n_features,n_actions,env):
+        self.alpha = alpha
+        self.epsilon = epsilon
+        self.min_epsilon = min_epsilon
+        self.decay_epsilon = decay_epsilon
+        self.gamma = gamma
+        self.env = env
+
+        self.n_actions = 2
+        self.action_space = [a for a in range(self.n_actions)]
+
+        self.weights = np.random.randn(n_actions,n_features)/np.sqrt(n_features)
+        self.biases = np.zeros((n_actions,1))
+    def standarize(self,state):
+        state = np.array(state)
+        return state/12
+    def features(self,state):
+        state = self.standarize(state)
+        return np.array([[state[0]],[state[1]],[state[2]],[state[3]]])
+    
+    def predict(self,state):
+        Qs = np.dot(self.weights,self.features(state)) + self.biases
+        return Qs
+    def choose_action(self):
+        p = np.random.rand()
+        if p < self.epsilon:
+            return np.random.choice(self.action_space)
+        else:
+            Qs = self.predict(self.env.current_state)
+            return np.argmax(Qs)
+
+    def learn(self):
+        state = self.env.current_state
+        state_for_update = self.standarize(state)
+        Qs = self.predict(state)
+        targets = Qs.copy()
+        action = self.choose_action()
+        next_s,reward,done = self.env.step(action)
+        if done:
+            targets[action] = reward
+        else:
+            next_s = self.predict(next_s)
+            targets[action] = reward + self.gamma*np.max(next_s)
+
+        self.weights = self.weights + self.alpha*(targets - Qs)*state_for_update
+
+        return done
+        
+
+
+class SecondLinearAgent:
+    def __init__(self,alpha,epsilon,min_epsilon,decay_epsilon,gamma,n_features,n_actions,env):
+        self.alpha = alpha
+        self.epsilon = epsilon
+        self.min_epsilon = min_epsilon
+        self.decay_epsilon = decay_epsilon
+        self.gamma = gamma
+        self.env = env
+
+        self.n_actions = 2
+        self.action_space = [a for a in range(self.n_actions)]
+
+        self.weights = np.random.randn(n_actions,n_features)/np.sqrt(n_features)
+        self.biases = np.zeros((n_actions,1))
+#    def standarize(self,state):
+ #       state = np.array(state)
+  #      return state/np.max(state)
+        self.idx = self.get_idx()
+    def get_idx(self):
+        with open('vs.txt','r') as f:
+            try:
+                return f.readlines()[-1].split(',')[0]
+            except:
+                return 0
+    def distance_feats(self):
+        agent_pos = self.env.current_agent_pos
+        dists = []
+        for mob_pos in self.env.mob_poss:
+            for coor in range(2):
+                dist = mob_pos[coor]-agent_pos[coor]
+                dist = 1/np.max(mob_pos[coor]-agent_pos[coor]) if dist != 0 else 1
+                dists.append(dist)
+                if coor == 1:
+                    dists.append(mob_pos[0]*dist)
+        return dists
+
+    
+    def concatenate(self,state,other):
+        return np.concatenate((np.array(state),other))
+
+    
+    def features(self,state):
+        dist_feats = self.distance_feats()
+        state = state[0]/12,state[1]/12,state[2]/12,state[3]/12,1
+        state = np.array(list(state)+dist_feats)#self.concatenate(state,dist_feats)
+        state = state[:,np.newaxis]
+        #state = self.standarize(state)
+        
+        return state
+    
+    def predict(self,state):
+        #print('state',state)
+        #print('self.weights.shape',self.weights.shape)
+        #print('self.features(state).shape',self.features(state).shape)
+        Qs = np.dot(self.weights,self.features(state)) + self.biases
+        
+        return Qs
+    def choose_action(self):
+        p = np.random.rand()
+        if p < self.epsilon:
+            return np.random.choice(self.action_space)
+        else:
+            Qs = self.predict(self.env.current_state)
+            return np.argmax(Qs)
+
+    def learn(self):
+        state = self.env.current_state
+        state_for_update = self.features(state)
+        Qs = self.predict(state)
+        best_Qs = np.mean(Qs)
+        #with open('vs.txt','a') as f:
+            
+         #   f.write(str(self.idx)+','+str(best_Qs)+'\n')
+          #  self.idx +=1
+            
+        targets = Qs.copy()
+        action = self.choose_action()
+        next_s,reward,done = self.env.step(action)
+        if done:
+            targets[action] = reward
+        else:
+            next_s = self.predict(next_s)
+            targets[action] = reward + self.gamma*np.max(next_s)
+#        print('targets.shape',targets.shape)
+ #       print('Qs.shape',Qs.shape)
+  #      print('(targets - Qs).shape',(targets - Qs).shape)
+   #     print('state_for_update',state_for_update)
+        self.weights = self.weights + self.alpha*np.dot((targets - Qs),state_for_update.T)
+
+        return done
+
+class SecondRandomLinearAgent:
+    def __init__(self,alpha,epsilon,min_epsilon,decay_epsilon,gamma,n_features,n_actions,env):
+        self.alpha = alpha
+        self.epsilon = epsilon
+        self.min_epsilon = min_epsilon
+        self.decay_epsilon = decay_epsilon
+        self.gamma = gamma
+        self.env = env
+
+        self.n_actions = 2
+        self.action_space = [a for a in range(self.n_actions)]
+
+        self.weights = np.random.randn(n_actions,n_features)/np.sqrt(n_features)
+        self.biases = np.zeros((n_actions,1))
+    def standarize(self,state):
+        state = np.array(state)
+        return state/np.max(state)
+    def distance_feats(self):
+        agent_pos = self.env.current_agent_pos
+        dists = []
+        for mob_pos in self.env.mob_poss:
+            for coor in range(2):
+                dist = mob_pos[coor]-agent_pos[coor]
+                dist = 1/np.max(mob_pos[coor]-agent_pos[coor]) if dist != 0 else 1
+                dists.append(dist)
+                if coor == 1:
+                    dists.append(mob_pos[0]*dist)
+        return dists
+
+    
+    def concatenate(self,state,other):
+        return np.concatenate((np.array(state),other))
+
+    
+    def features(self,state):
+        dist_feats = self.distance_feats()
+        state = state[0]/12,state[1]/12,state[2]/12,state[3]/12
+        state = np.array(list(state)+dist_feats)#self.concatenate(state,dist_feats)
+        state = state[:,np.newaxis]
+        state = self.standarize(state)
+        
+        return state
+    
+    def predict(self,state):
+        #print('state',state)
+        #print('self.weights.shape',self.weights.shape)
+        #print('self.features(state).shape',self.features(state).shape)
+        Qs = np.dot(self.weights,self.features(state)) + self.biases
+        
+        return Qs
+    def choose_action(self):
+        
+        return np.random.choice(self.action_space)
+        
+    def learn(self):
+        state = self.env.current_state
+        state_for_update = self.features(state)
+        Qs = self.predict(state)
+        targets = Qs.copy()
+        action = self.choose_action()
+        next_s,reward,done = self.env.step(action)
+        if done:
+            targets[action] = reward
+        else:
+            next_s = self.predict(next_s)
+            targets[action] = reward + self.gamma*np.max(next_s)
+#        print('targets.shape',targets.shape)
+ #       print('Qs.shape',Qs.shape)
+  #      print('(targets - Qs).shape',(targets - Qs).shape)
+   #     print('state_for_update',state_for_update)
+        self.weights = self.weights + self.alpha*np.dot((targets - Qs),state_for_update.T)
+
+        return done
+
+
+class ThirdLinearAgent:
+    def __init__(self,alpha,epsilon,min_epsilon,decay_epsilon,gamma,n_features,n_actions,env):
+        self.alpha = alpha
+        self.epsilon = epsilon
+        self.min_epsilon = min_epsilon
+        self.decay_epsilon = decay_epsilon
+        self.gamma = gamma
+        self.env = env
+
+        self.n_actions = 2
+        self.action_space = [a for a in range(self.n_actions)]
+
+        self.weights = np.random.randn(n_actions,n_features)/np.sqrt(n_features)
+        self.biases = np.zeros((n_actions,1))
+    def standarize(self,state):
+        state = np.array(state)
+        return state/np.max(state)
+    def features(self,state):
+        state = np.array([
+                          [state[0]*state[0]/144],
+                          [state[1]*state[1]/144],
+                          [state[2]*state[2]/144],
+                          [state[3]*state[3]/144],
+                          [state[3]*state[2]/144],
+                          [state[3]*state[1]/144],
+                          [state[3]*state[0]/144],
+                          [state[2]*state[1]/144],
+                          [state[2]*state[0]/144],
+                          [state[1]*state[0]/144],
+                          [state[0]/12],
+                          [state[1]/12],
+                          [state[2]/12],
+                          [state[3]/12],
+                          [1]
+                          ])
+        
+        #state = self.standarize(state)
+        return state
+    
+    def predict(self,state):
+        Qs = np.dot(self.weights,self.features(state)) + self.biases
+        return Qs
+    def choose_action(self):
+        p = np.random.rand()
+        if p < self.epsilon:
+            return np.random.choice(self.action_space)
+        else:
+            Qs = self.predict(self.env.current_state)
+            return np.argmax(Qs)
+
+    def learn(self):
+        state = self.env.current_state
+        state_for_update = self.features(state)
+        #print('state_for_update',state_for_update)
+        Qs = self.predict(state)
+        targets = Qs.copy()
+        action = self.choose_action()
+        next_s,reward,done = self.env.step(action)
+        if done:
+            targets[action] = reward
+        else:
+            next_s = self.predict(next_s)
+            targets[action] = reward + self.gamma*np.max(next_s)
+       # print(self.weights)
+        #print(targets-Qs)
+        self.weights = self.weights + self.alpha*np.dot((targets - Qs),state_for_update.T)
+
+        return done
+
+    
+class FourthLinearAgent:
+    def __init__(self,alpha,epsilon,min_epsilon,decay_epsilon,gamma,n_actions,env):
+        self.alpha = alpha
+        self.epsilon = epsilon
+        self.min_epsilon = min_epsilon
+        self.decay_epsilon = decay_epsilon
+        self.gamma = gamma
+        self.env = env
+
+        self.n_actions = 2
+        self.action_space = [a for a in range(self.n_actions)]
+        self.n_states = self.env.rows*self.env.cols*self.env.cols
+        print('self.n_states',self.n_states)
+        self.weights = np.random.randn(n_actions,self.n_states)/np.sqrt(self.n_states)
+        
+        
+        self.biases = np.zeros((n_actions,1))
+
+        self.idx = self.read_idx()
+    #def standarize(self,state):
+     #   state = np.array(state)
+      #  return state/12
+    def read_idx(self):
+        with open('vs.txt','r') as f:
+            return f.readlines()[-1].split(',')[0]
+    def features(self,state):
+        #HARDCODED IN THE NUMER OF MOBS (1)
+        #print('self.env.mob_poss[0]',self.env.mob_poss[0])
+        state = np.zeros((self.n_states,1))
+        state_idx = self.env.current_agent_pos[1]*self.env.cols*self.env.rows + self.env.mob_poss[0][0]*self.env.cols + self.env.mob_poss[0][1]
+        state[state_idx]  = 1
+        return state
+    
+    def predict(self,state):
+        Qs = np.dot(self.weights,self.features(state)) + self.biases
+        return Qs
+    
+    def choose_action(self,state):
+        p = np.random.rand()
+        if p < self.epsilon:
+            return np.random.choice(self.action_space)
+        else:
+            Qs = self.predict(state)
+            return np.argmax(Qs)
+
+    def learn(self):
+        state = self.env.current_state
+        idx_one = np.where(self.features(state)==1)[0][0]
+        #state_for_update = self.features(state)#self.standarize(state)
+        Qs = self.predict(state)
+        best_Qs = np.max(Qs)
+        with open('vs.txt','a') as f:
+            f.write(str(self.idx)+','+str(best_Qs)+'\n')
+        targets = Qs.copy()
+        action = self.choose_action(state)
+        next_s,reward,done = self.env.step(action)
+        if done:
+            targets[action] = reward
+        else:
+            next_Qs = self.predict(next_s)
+            targets[action] = reward + self.gamma*np.max(next_Qs)
+        #print('(targets - Qs)',(targets - Qs))
+        #print('state_for_update',state_for_update.shape)
+        
+        #print('idx_one',idx_one)
+        #print('self.weights[:,[idx_one]]',self.weights[:,[idx_one]])
+        #print('targets[action]',targets[action])
+        #print('Qs[action]',Qs[action])
+        self.weights[action,idx_one] += self.alpha*(targets[action] - Qs[action])
+
+        return done
+
+def ReLU(z):
+    z[z<=0] = 0
+    return z
+
+def ReLU_prime(z):
+    z[z<=0] = 0
+    z[z>0] = 1
+    return z
+
+class DeepRLAgent:
+    def __init__(self,alpha,epsilon,decaying_eps,min_eps,gamma,layers,env):
+        self.alpha = alpha
+        self.epsilon = epsilon
+        self.decaying_eps = decaying_eps
+        self.min_eps = min_eps
+        self.gamma = gamma
+        self.layers = layers
+        self.n_layers = len(layers)
+        self.n_actions = self.layers[-1]
+        
+        self.weights = [np.random.randn(y,x)/np.sqrt(x) for x,y in zip(layers[:-1],layers[1:])]
+        for l in range(self.n_layers-1):
+            print(self.weights[l].shape)
+        self.biases = [np.zeros((y,1)) for y in layers[1:]]
+        self.env = env
+
+    def predict(self,state):
+        s = np.array(state).reshape(len(state),1)/12
+        a = s
+        cache = [(None,a)]
+        n_ifs = 0
+        for l in range(self.n_layers-1):
+            z = np.dot(self.weights[l],a) + self.biases[l]
+            #print('z.shape',z.shape)
+            
+            if l < self.n_layers - 2:
+                a = ReLU(z)
+                n_ifs +=1
+                
+            elif l==self.n_layers - 2:
+
+                a = z
+                #break
+            
+            cache.append((z,a))
+                
+                
+        return a,cache
+
+    def backprop(self,cache,delta):
+        dwsdbs = []
+        dz = -delta
+        for l in reversed(range(1,self.n_layers)):
+            dw = np.dot(dz,cache[l-1][1].T)
+            db = dz
+            da = np.dot(self.weights[l-1].T,dz)
+            if l > 1:
+                dz = da*ReLU_prime(cache[l-1][0])
+            dwsdbs.append((dw,db))
+
+        for l in range(self.n_layers - 1):
+            self.weights[l] -= self.alpha*dwsdbs[self.n_layers-2-l][0] 
+            self.biases[l] -= self.alpha*dwsdbs[self.n_layers-2-l][1]
+    def choose_action(self,state):
+        p = np.random.rand()
+        if p < self.epsilon:
+            return np.random.choice(self.n_actions)
+        else:
+            Qs,_ = self.predict(state)
+            #print('Qs.shape',Qs.shape)
+            action = np.argmax(Qs)
+            return action
+        
+    def learn(self):
+        state = self.env.current_state
+        Qs,cache = self.predict(state)
+        #print('Qs.shape',Qs.shape)
+        targets = Qs.copy()
+        action = self.choose_action(state)
+        next_s,reward,done = self.env.step(action)
+        if done:
+             targets[action] = reward
+        else:
+            next_Qs,_ = self.predict(next_s)
+            targets[action] = reward + self.gamma*np.max(next_Qs)
+        delta = (targets - Qs)
+        
+        #print('delta.shape',delta.shape)
+        self.backprop(cache,delta)
+
+        return done
+
+
+
+
+
+
+class DeepRLAgentWithMomentum:
+    def __init__(self,alpha,epsilon,decaying_eps,min_eps,gamma,layers,env):
+        self.alpha = alpha
+        self.epsilon = epsilon
+        self.decaying_eps = decaying_eps
+        self.min_eps = min_eps
+        self.gamma = gamma
+        self.layers = layers
+        self.n_layers = len(layers)
+        self.n_actions = self.layers[-1]
+        
+        self.weights = [np.random.randn(y,x)/np.sqrt(x) for x,y in zip(layers[:-1],layers[1:])]
+        for l in range(self.n_layers-1):
+            print(self.weights[l].shape)
+        self.biases = [np.zeros((y,1)) for y in layers[1:]]
+
+        self.vw = [np.zeros_like(self.weights[l]) for l in range(self.n_layers-1)]
+        self.vb = [np.zeros_like(self.biases[l]) for l in range(self.n_layers-1)]
+        self.beta = 0.9
+        
+        self.env = env
+
+    def predict(self,state):
+        s = np.array(state).reshape(len(state),1)/12
+        a = s
+        cache = [(None,a)]
+        n_ifs = 0
+        for l in range(self.n_layers-1):
+            z = np.dot(self.weights[l],a)
+            #print('z.shape',z.shape)
+            
+            if l < self.n_layers - 2:
+                a = ReLU(z)
+                n_ifs +=1
+                
+            elif l==self.n_layers - 2:
+
+                a = z
+                #break
+            
+            cache.append((z,a))
+                
+                
+        return a,cache
+
+    def backprop(self,cache,delta):
+        dwsdbs = []
+        dz = -delta
+        for l in reversed(range(1,self.n_layers)):
+            dw = np.dot(dz,cache[l-1][1].T)
+            db = dz
+            self.vw[l-1] = self.beta*self.vw[l-1] + (1 - self.beta)*dw
+            self.vb[l-1] = self.beta*self.vb[l-1] + (1 - self.beta)*db
+            da = np.dot(self.weights[l-1].T,dz)
+            if l > 1:
+                dz = da*ReLU_prime(cache[l-1][0])
+            dwsdbs.append((self.vw[l-1],self.vb[l-1]))
+
+        for l in range(self.n_layers - 1):
+            #print('dwsdbs[self.n_layers-2-l].shape',dwsdbs[self.n_layers-2-l].shape)
+            #print('self.weights[l].shape',self.weights[l].shape)
+            self.weights[l] -= self.alpha*dwsdbs[self.n_layers-2-l][0]
+            self.biases[l] -= self.alpha*dwsdbs[self.n_layers-2-l][1]
+            
+    def choose_action(self,state):
+        p = np.random.rand()
+        if p < self.epsilon:
+            return np.random.choice(self.n_actions)
+        else:
+            Qs,_ = self.predict(state)
+            #print('Qs.shape',Qs.shape)
+            action = np.argmax(Qs)
+            return action
+        
+    def learn(self):
+        state = self.env.current_state
+        Qs,cache = self.predict(state)
+        #print('Qs.shape',Qs.shape)
+        targets = Qs.copy()
+        action = self.choose_action(state)
+        next_s,reward,done = self.env.step(action)
+        if done:
+             targets[action] = reward
+        else:
+            next_Qs,_ = self.predict(next_s)
+            targets[action] = reward + self.gamma*np.max(next_Qs)
+        delta = (targets - Qs)
+        
+        #print('delta.shape',delta.shape)
+        self.backprop(cache,delta)
+
+        return done
+
+class DeepRLAgentWithPixelsWM:
+    def __init__(self,alpha,epsilon,decaying_eps,min_eps,gamma,layers,env):
+        self.alpha = alpha
+        self.epsilon = epsilon
+        self.decaying_eps = decaying_eps
+        self.min_eps = min_eps
+        self.gamma = gamma
+        layers[0] = 144
+        print(layers)
+        self.layers = layers
+        self.n_layers = len(layers)
+        self.n_actions = self.layers[-1]
+        self.prev_frame = np.zeros(layers[0])
+        self.cur_frame = None
+        self.next_frame = None
+        self.weights = [np.random.randn(y,x)/np.sqrt(x) for x,y in zip(layers[:-1],layers[1:])]
+        #for l in range(self.n_layers-1):
+         #   print(self.weights[l].shape)
+        self.biases = [np.zeros((y,1)) for y in layers[1:]]
+
+        self.vw = [np.zeros_like(self.weights[l]) for l in range(self.n_layers-1)]
+        self.vb = [np.zeros_like(self.biases[l]) for l in range(self.n_layers-1)]
+
+        self.sw = [np.zeros_like(self.weights[l]) for l in range(self.n_layers-1)]
+        self.sb = [np.zeros_like(self.biases[l]) for l in range(self.n_layers-1)]
+
+        self.beta = 0.9
+        
+        
+        self.env = env
+
+    def predict(self,state):
+        s = np.array(state).reshape(len(state),1)/12
+        a = s
+        cache = [(None,a)]
+        n_ifs = 0
+        for l in range(self.n_layers-1):
+            z = np.dot(self.weights[l],a)
+            #print('z.shape',z.shape)
+            
+            if l < self.n_layers - 2:
+                a = ReLU(z)
+                n_ifs +=1
+                
+            elif l==self.n_layers - 2:
+
+                a = z
+                #break
+            
+            cache.append((z,a))
+                
+                
+        return a,cache
+
+    def backprop(self,cache,delta):
+        dwsdbs = []
+        dz = -delta
+        for l in reversed(range(1,self.n_layers)):
+            dw = np.dot(dz,cache[l-1][1].T)
+            db = dz
+            self.vw[l-1] = self.beta*self.vw[l-1] + (1 - self.beta)*dw
+            self.vb[l-1] = self.beta*self.vb[l-1] + (1 - self.beta)*db
+            da = np.dot(self.weights[l-1].T,dz)
+            if l > 1:
+                dz = da*ReLU_prime(cache[l-1][0])
+            dwsdbs.append((self.vw[l-1],self.vb[l-1]))
+
+        for l in range(self.n_layers - 1):
+            #print('dwsdbs[self.n_layers-2-l].shape',dwsdbs[self.n_layers-2-l].shape)
+            #print('self.weights[l].shape',self.weights[l].shape)
+            self.weights[l] -= self.alpha*dwsdbs[self.n_layers-2-l][0]
+            self.biases[l] -= self.alpha*dwsdbs[self.n_layers-2-l][1]
+            
+    def choose_action(self,state):
+        p = np.random.rand()
+        if p < self.epsilon:
+            return np.random.choice(self.n_actions)
+        else:
+            Qs,_ = self.predict(state)
+            #print('Qs.shape',Qs.shape)
+            action = np.argmax(Qs)
+            return action
+        
+    def learn(self):
+        state = self.env.current_state
+        state = self.env.state_as_pixels()
+        #print('state',state)
+        self.cur_frame = state
+        state = self.cur_frame - self.prev_frame
+        #print('state',state.reshape(12,12))
+        self.prev_frame = self.cur_frame
+        Qs,cache = self.predict(state)
+        #print('Qs.shape',Qs.shape)
+        targets = Qs.copy()
+        action = self.choose_action(state)
+        next_s,reward,done = self.env.step(action)
+        next_s = self.env.state_as_pixels()
+        next_s = next_s - self.cur_frame
+        #next_s
+        if done:
+             targets[action] = reward
+        else:
+            next_Qs,_ = self.predict(next_s)
+            targets[action] = reward + self.gamma*np.max(next_Qs)
+        delta = (targets - Qs)
+        
+        #print('delta.shape',delta.shape)
+        self.backprop(cache,delta)
+
+        return done
+
+
+class DeepRLAgentWithPixelsAdam:
+    def __init__(self,alpha,epsilon,decaying_eps,min_eps,gamma,layers,env):
+        self.alpha = alpha
+        self.epsilon = epsilon
+        self.decaying_eps = decaying_eps
+        self.min_eps = min_eps
+        self.gamma = gamma
+        layers[0] = 144
+        print(layers)
+        self.layers = layers
+        self.n_layers = len(layers)
+        self.n_actions = self.layers[-1]
+        self.prev_frame = np.zeros(layers[0])
+        self.cur_frame = None
+        self.next_frame = None
+        self.weights = [np.random.randn(y,x)/np.sqrt(x) for x,y in zip(layers[:-1],layers[1:])]
+        #for l in range(self.n_layers-1):
+         #   print(self.weights[l].shape)
+        self.biases = [np.zeros((y,1)) for y in layers[1:]]
+
+        self.vw = [np.zeros_like(self.weights[l]) for l in range(self.n_layers-1)]
+        self.vb = [np.zeros_like(self.biases[l]) for l in range(self.n_layers-1)]
+
+        self.sw = [np.zeros_like(self.weights[l]) for l in range(self.n_layers-1)]
+        self.sb = [np.zeros_like(self.biases[l]) for l in range(self.n_layers-1)]
+
+        self.beta = 0.9
+        self.beta2 = 0.999
+        
+        
+        self.env = env
+
+    def predict(self,state):
+        s = np.array(state).reshape(len(state),1)/12
+        a = s
+        cache = [(None,a)]
+        n_ifs = 0
+        for l in range(self.n_layers-1):
+            z = np.dot(self.weights[l],a)
+            #print('z.shape',z.shape)
+            
+            if l < self.n_layers - 2:
+                a = ReLU(z)
+                n_ifs +=1
+                
+            elif l==self.n_layers - 2:
+
+                a = z
+                #break
+            
+            cache.append((z,a))
+                
+                
+        return a,cache
+
+    def backprop(self,cache,delta):
+        vwsvbs = []
+        swssbs = []
+        dz = -delta
+        for l in reversed(range(1,self.n_layers)):
+            dw = np.dot(dz,cache[l-1][1].T)
+            db = dz
+            self.vw[l-1] = self.beta*self.vw[l-1] + (1 - self.beta)*dw
+            self.vb[l-1] = self.beta*self.vb[l-1] + (1 - self.beta)*db
+
+            self.sw[l-1] = self.beta2*self.sw[l-1] + (1 - self.beta2)*dw**2
+            self.sb[l-1] = self.beta2*self.sb[l-1] + (1 - self.beta2)*db**2
+            da = np.dot(self.weights[l-1].T,dz)
+            if l > 1:
+                dz = da*ReLU_prime(cache[l-1][0])
+            vwsvbs.append((self.vw[l-1],self.vb[l-1]))
+            swssbs.append((self.sw[l-1],self.sb[l-1]))
+
+        for l in range(self.n_layers - 1):
+            #print('dwsdbs[self.n_layers-2-l].shape',dwsdbs[self.n_layers-2-l].shape)
+            #print('self.weights[l].shape',self.weights[l].shape)
+            self.weights[l] -= self.alpha*(vwsvbs[self.n_layers-2-l][0]/np.sqrt(swssbs[self.n_layers-2-l][0]+10e-8))
+            self.biases[l] -= self.alpha*(vwsvbs[self.n_layers-2-l][1]/np.sqrt(swssbs[self.n_layers-2-l][1]+10e-8))
+            
+    def choose_action(self,state):
+        p = np.random.rand()
+        if p < self.epsilon:
+            return np.random.choice(self.n_actions)
+        else:
+            Qs,_ = self.predict(state)
+            #print('Qs.shape',Qs.shape)
+            action = np.argmax(Qs)
+            return action
+        
+    def learn(self):
+        state = self.env.current_state
+        state = self.env.state_as_pixels()
+        #print('state',state)
+        self.cur_frame = state
+        state = self.cur_frame - self.prev_frame
+        #print('state',state.reshape(12,12))
+        self.prev_frame = self.cur_frame
+        Qs,cache = self.predict(state)
+        #print('Qs.shape',Qs.shape)
+        targets = Qs.copy()
+        action = self.choose_action(state)
+        next_s,reward,done = self.env.step(action)
+        next_s = self.env.state_as_pixels()
+        next_s = next_s - self.cur_frame
+        #next_s
+        if done:
+             targets[action] = reward
+        else:
+            next_Qs,_ = self.predict(next_s)
+            targets[action] = reward + self.gamma*np.max(next_Qs)
+        delta = (targets - Qs)
+        
+        #print('delta.shape',delta.shape)
+        self.backprop(cache,delta)
+
+        return done
+
+
+
+class DDRLAgentWPWM:
+    def __init__(self,alpha,epsilon,decaying_eps,min_eps,gamma,layers,env):
+        self.alpha = alpha
+        self.epsilon = epsilon
+        self.decaying_eps = decaying_eps
+        self.min_eps = min_eps
+        self.gamma = gamma
+        layers[0] = 144
+        print(layers)
+        self.layers = layers
+        self.n_layers = len(layers)
+        self.n_actions = self.layers[-1]
+        self.prev_frame = np.zeros(layers[0])
+        self.cur_frame = None
+        self.next_frame = None
+        self.weights = [np.random.randn(y,x)/np.sqrt(x) for x,y in zip(layers[:-1],layers[1:])]
+        self.target_weights = self.weights.copy()
+        #for l in range(self.n_layers-1):
+         #   print(self.weights[l].shape)
+        self.biases = [np.zeros((y,1)) for y in layers[1:]]
+        self.target_biases = self.biases.copy()
+        self.counter_updating_targets = 0
+        self.n_steps_to_update_targets = 100
+    
+        self.vw = [np.zeros_like(self.weights[l]) for l in range(self.n_layers-1)]
+        self.vb = [np.zeros_like(self.biases[l]) for l in range(self.n_layers-1)]
+        self.beta = 0.9
+        
+        self.env = env
+
+        self.memories = deque(maxlen=100_000)
+        self.batch_size = 32
+
+    def store_memory(self,state,action,next_state,reward,done):
+        self.memories.append((state,action,next_state,reward,done))
+
+    def predict(self,state,type_of_weights='normal'):
+        if len(np.array(state).shape) == 1:
+            s = np.array(state).reshape(len(state),1)/12
+        #print('state.shape',state.shape)
+        s = np.array(state)/12
+        a = s
+        cache = [[None,a]]
+        n_ifs = 0
+        #print('predict')
+        for l in range(self.n_layers-1):
+            #print('self.weights[l].shape',self.weights[l].shape)
+            #print('a.shape',a.shape)
+            if type_of_weights == 'normal':
+                z = np.dot(self.weights[l],a)
+            elif type_of_weights == 'target':
+                z = np.dot(self.target_weights[l],a)
+            #print('z.shape',z.shape)
+            
+            if l < self.n_layers - 2:
+                a = ReLU(z)
+                n_ifs +=1
+                
+            elif l==self.n_layers - 2:
+
+                a = z
+                #print('a.shape',a.shape)
+                #break
+            
+            cache.append([z,a])
+                
+                
+        return a,cache
+
+    def backprop(self,cache,delta):
+        dwsdbs = []
+        if len(delta.shape) == 2:
+            #print(2)
+            k = delta.shape[0]
+            m = delta.shape[1]
+        else:
+            
+            k = m = 1
+            
+        dz = -delta
+        #print('delta',delta)
+        #print('cache',cache)
+        for l in reversed(range(1,self.n_layers)):
+            #print('dz.shape',dz.shape)
+            #print('cache[l-1][1].T',cache[l-1][1].T)
+            if len(cache[l-1][1].shape) == 1:
+                if l == self.n_layers - 1:
+                    dz = dz[:,np.newaxis]
+             #   print('cache[l-1][1]',cache[l-1][1])
+                
+                cache[l-1][1] = cache[l-1][1][:,np.newaxis]
+              #  print('cache[l-1][1].shape',cache[l-1][1].shape)
+               # print('what??')
+       #     print('cache[l-1][1].T.shape',cache[l-1][1].T.shape)
+      #      print('dz.shape',dz.shape)
+            dw = (1/(k*m))*np.dot(dz,cache[l-1][1].T)
+            
+            db = (1/(k*m))*np.sum(dz,axis=1)[:,np.newaxis]
+            #print('db.shape',db.shape)
+     #       print('dw.shape',dw.shape)
+            self.vw[l-1] = self.beta*self.vw[l-1] + (1 - self.beta)*dw
+            self.vb[l-1] = self.beta*self.vb[l-1] + (1 - self.beta)*db
+            da = np.dot(self.weights[l-1].T,dz)
+            #print('da.shape',da.shape)
+            if l > 1:
+                if len(cache[l-1][0].shape) == 1:
+                    cache[l-1][0] = cache[l-1][0][:,np.newaxis]
+    #            print('cache[l-1][0].shape',cache[l-1][0].shape)
+                
+                dz = da*ReLU_prime(cache[l-1][0])
+            dwsdbs.append((dw,db))#(self.vw[l-1],self.vb[l-1]))
+
+        for l in range(self.n_layers - 1):
+            #print('dwsdbs[self.n_layers-2-l].shape',dwsdbs[self.n_layers-2-l].shape)
+            #print('self.weights[l].shape',self.weights[l].shape)
+            self.weights[l] -= self.alpha*dwsdbs[self.n_layers-2-l][0]
+            #print('self.biases[l].shape',self.biases[l].shape)
+            self.biases[l] -= self.alpha*dwsdbs[self.n_layers-2-l][1]
+            
+    def choose_action(self,state):
+        p = np.random.rand()
+        if p < self.epsilon:
+            return np.random.choice(self.n_actions)
+        else:
+            Qs,_ = self.predict(state)
+            #print('Qs.shape',Qs.shape)
+            action = np.argmax(Qs)
+            return action
+        
+    def learn_from_memories(self):
+        if len(self.memories) < self.batch_size:
+            return
+        #print('self.memories[0][0].shape',self.memories[0][0].shape)
+        memories = np.array(random.sample(self.memories,self.batch_size))
+        #print('memories[0].shape',memories[0].shape)
+        #print('memories[0][0].shape',memories[0][0].shape)
+        states = np.vstack(memories[:,0]).T
+        #print('type(memories[:,0])',type(memories[:,0]))
+        #print('memories[:,0][0]',memories[:,0][0])
+        #print('memories[:,0][0].shape',memories[:,0][0].shape)
+        #print('memories[:,0].shape',memories[:,0].shape)
+        #print('memories[:,0].reshape(144,32).shape',memories[:,0].reshape(144,32).shape)
+        #print('222states.shape',states.shape)
+        #print('memories[:,0][:2]',memories[:,0][:2])
+        actions = np.vstack(memories[:,1]).T
+        next_ss = np.vstack(memories[:,2]).T
+        rewards = np.vstack(memories[:,3]).T
+        dones = np.vstack(memories[:,4]).T
+        idxs = [x for x in range(self.batch_size)]
+        Qs,caches = self.predict(states,'normal')
+        next_Qs_normal,caches2 = self.predict(next_ss,'normal')
+        #print('next_Qs_normal.shape',next_Qs_normal.shape)
+        best_actions_normal = np.argmax(next_Qs_normal,axis=0)
+        targets = Qs.copy()
+        next_Qs,next_caches = self.predict(next_ss,'target')
+        next_Q_actions_target = next_Qs[best_actions_normal,idxs][np.newaxis,:]
+        
+
+
+
+        #next_max_Qs = np.max(next_Q_actions_target,axis=0)[np.newaxis,:]
+
+
+
+        #coso = rewards + self.gamma*next_Qs*(1 - np.array(dones,dtype=np.int8))
+        #print('rewards.shape',rewards.shape)
+        #print('next_Qs*(1 - np.array(dones,dtype=np.int8)).shape',next_Qs*(1 - np.array(dones,dtype=np.int8)).shape)
+        #print('next_max_Qs.shape',next_max_Qs.shape)
+        #print('coso.shape',coso.shape)
+        #print('targets[actions,idxs].shape',targets[actions,idxs].shape)
+        targets[actions,idxs] = rewards + self.gamma*next_Q_actions_target*(1 - np.array(dones,dtype=np.int8))
+        deltas = targets - next_Qs
+        self.backprop(caches,deltas)
+
+        
+    def learn(self):
+        self.learn_from_memories()
+        state = self.env.current_state
+        state = self.env.state_as_pixels()
+        #print('state',state)
+        self.cur_frame = state
+        state = self.cur_frame - self.prev_frame
+        
+        #print('state',state.reshape(12,12))
+        self.prev_frame = self.cur_frame
+        #Qs,cache = self.predict(state,'normal')
+        #print('Qs.shape',Qs.shape)
+
+        Qs,cache = self.predict(state,'normal')
+        action = self.choose_action(state)
+        next_s,reward,done = self.env.step(action)
+        next_s = self.env.state_as_pixels()
+        next_s = next_s - self.cur_frame
+        next_Qs_normal,caches2 = self.predict(next_s,'normal')
+        #print('next_Qs_normal.shape',next_Qs_normal.shape)
+        best_action_normal = np.argmax(next_Qs_normal)
+        #print('best_action_normal',best_action_normal)
+        targets = Qs.copy()
+        next_Qs,next_caches = self.predict(next_s,'target')
+        #print('next_Qs',next_Qs)
+        #print('next_Qs[best_action_normal]',next_Qs[best_action_normal])
+        next_Q_action_target = next_Qs[best_action_normal]
+        
+        if done:
+             targets[action] = reward
+        else:
+            next_Qs,_ = self.predict(next_s,'target')
+            targets[action] = reward + self.gamma*np.max(next_Qs)
+        delta = (targets - Qs)
+        self.store_memory(state,action,next_s,reward,done)
+        #print('delta.shape',delta.shape)
+        self.backprop(cache,delta)
+
+        if self.counter_updating_targets >= self.n_steps_to_update_targets:
+            #print('ENTRO')
+            self.target_weights = self.weights.copy()
+            self.target_biases = self.biases.copy()
+            self.counter_updating_targets = 0
+        self.counter_updating_targets +=1
+
+        return done
+
+env = ShmupEnv(12,12,1)
+#agent = Agent(0.01,0.1,0.995,env)
+#agent = SecondLinearAgent(0.00005,1,0.1,0.99995,0.95,8,2,env)
+#agent = DeepRLAgent(0.0008,1,0.99995,0.1,0.95,[4,50,25,10,2],env)
+#agent = DeepRLAgentWithPixelsWM(0.0001,1,0.99999,0.1,0.95,[4,25,10,2],env)
+#agent = DeepRLAgentWithPixelsAdam(0.001,1,0.99999,0.1,0.95,[4,100,50,25,10,2],env)
+agent = DDRLAgentWPWM(0.0001,1,0.99995,0.1,0.95,[4,50,25,10,2],env)
+episodes = 200_000
+max_n_steps = 10_000
+n_steps_per_episode = []
+previous_steps = 0
+#d = DynamicUpdate()
+init_graph = True
+idx = 0
+mean_length = np.zeros(100)
+mean_lengths = []
+
+
+for ep in range(episodes):
+    env.reset()
+    done = False
+    first = True
+    
+    steps = 0
+    agent.epsilon = max(agent.epsilon*agent.decaying_eps,agent.min_eps)
+    
+    
+    calculate_mean = True
+    while not done:
+        #print(steps)
+        
+        done = agent.learn()
+       # if init_graph:
+        #    import threading
+         #   t = threading.Thread(target=d)
+          #  t.start()
+           # init_graph = False
+        if steps >= max_n_steps:
+            done = True
+        #if ep<=1_000:
+        if ep%1000 == 0:
+                
+                    
+                if first:
+                    print('ep',ep)
+                    print('agent.epsilon',agent.epsilon)
+                    print('agent.alpha',agent.alpha)
+                    first = False
+                if  ep%5_000 == 0:
+                    env.render()
+            #if ep%1000 == 0 and ep != 0:
+                
+                
+        steps +=1
+    #print('n_steps_per_episode',steps)
+    #if ep%1000 == 0:
+    if ep%1000 == 0:
+        calculate_mean = True
+    if calculate_mean:
+            mean_length[idx] = steps
+            idx +=1
+    if idx>=100:
+        idx = 0
+        mean_lengths.append(np.mean(mean_length))
+        print('mean length in first 100 episodes:',np.mean(mean_length))
+        #plt.plot(mean_lengths)
+        #plt.show()
+        mean_length = np.zeros(100)
+        calculate_mean = False
+        
+    if steps > previous_steps:
+        print('New Record! More # of steps per episode: ',steps)
+        previous_steps = steps
+    n_steps_per_episode.append(steps)
+   
+        
+
+plt.plot(mean_lengths)
+plt.show()
+plt.plot(n_steps_per_episode)
+plt.show()
+env.reset()
+done = False
+agent.epsilon = 0
+while not done:
+    agent.choose_action(env.current_state)
+    env.render()
+
+
+    
+
+
+
+        
