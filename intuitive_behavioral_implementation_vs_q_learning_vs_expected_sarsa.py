@@ -48,7 +48,7 @@ class Agent:
         self.D = 0
         self.K = 1
         self.idx = 0
-        self.n_times_actions_taken = np.zeros(4)
+        self.n_times_actions_taken = np.zeros((env.rows,env.cols,4))
     def hyper(self,D):
         return 1/(1 + self.K*D)
         
@@ -61,7 +61,7 @@ class Agent:
     def expected_sarsa(self,s_):
         next_q = 0
         for a in range(4):
-            next_q += (self.n_times_actions_taken[a]/np.sum(self.n_times_actions_taken))*self.Q[s_[0],s_[1],a]
+            next_q += (self.n_times_actions_taken[s_[0],s_[1],a]/np.sum(self.n_times_actions_taken[s_[0],s_[1]]))*self.Q[s_[0],s_[1],a]
         return next_q
     def learn(self,s,a,s_,reward,done):
         if done:
@@ -102,7 +102,7 @@ for i in range(experiments):
 
         while not done:
             a = agent.choose_action(s)
-            agent.n_times_actions_taken[a] +=1
+            agent.n_times_actions_taken[s[0],s[1],a] +=1
             s_,reward,done = env.step(a)
             agent.states_actions.append((s,a))
             agent.steps +=1
